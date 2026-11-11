@@ -1,0 +1,60 @@
+name: build-from-zip
+
+# Use this when your repo contains stockpay-addon.zip at its root
+# (instead of the unpacked project). Save this file as:
+#   .github/workflows/build.yml
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  ZIP_FILE: stockpay-addon.zip
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "::error::$ZIP_FILE not found at the repo root"
+            exit 1
+          fi
+          unzip -q "$ZIP_FILE" -d _src
+          # find the folder that holds build.gradle (works with or without a top-level folder in the zip)
+          BUILD_FILE=$(find _src -maxdepth 3 -name build.gradle | head -n 1)
+          if [ -z "$BUILD_FILE" ]; then
+            echo "::error::No build.gradle found inside $ZIP_FILE"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$BUILD_FILE")" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Build
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew build
+          else
+            gradle build
+          fi
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: stockpay-jar
+          path: ${{ env.PROJECT_DIR }}/build/libs/*.jar
+          if-no-files-found: error
